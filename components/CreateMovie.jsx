@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useDispatch } from "react-redux";
 import { useRouter } from "next/navigation";
-import PageLayout from "./PageLayout"; 
+import PageLayout from "./PageLayout";
 import { MovieForm } from "./MovieForm";
 import { addMovie } from "@/redux/features/movieSlice";
 
@@ -24,13 +24,7 @@ export function CreateMovie() {
   };
 
   return (
-    <PageLayout
-      title="Create a new movie"
-      showLogout={true}
-      onLogout={() => {
-        /* handle logout */
-      }}
-    >
+    <PageLayout title="Create a new movie">
       <MovieForm
         initialData={null}
         onSubmit={handleSubmit}

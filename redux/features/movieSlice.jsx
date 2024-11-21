@@ -1,60 +1,18 @@
+// redux/features/movieSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { supabase } from "@/lib/supabase";
-
-const getSignedUrl = async (path) => {
-  if (!path) return null;
-
-  const fileName = path.includes("/") ? path.split("/").pop() : path;
-
-  const { data, error } = await supabase.storage
-    .from("movie_posters")
-    .createSignedUrl(fileName, 604800); // 7 days
-
-  if (error) throw error;
-  return data.signedUrl;
-};
 
 export const fetchMovies = createAsyncThunk(
   "movies/fetchMovies",
   async ({ page = 1, limit = 8 }) => {
     try {
-      const offset = (page - 1) * limit;
+      const response = await fetch(`/api/movies?page=${page}&limit=${limit}`);
 
-      const { count } = await supabase
-        .from("movies")
-        .select("*", { count: "exact", head: true });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message);
+      }
 
-      const { data: movies, error: fetchError } = await supabase
-        .from("movies")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1);
-
-      if (fetchError) throw fetchError;
-
-      const moviesWithSignedUrls = await Promise.all(
-        movies.map(async (movie) => {
-          if (movie.poster_url) {
-            try {
-              const signedUrl = await getSignedUrl(movie.poster_url);
-              return { ...movie, poster_url: signedUrl };
-            } catch (error) {
-              console.error(
-                `Failed to get signed URL for movie ${movie.id}:`,
-                error
-              );
-              return movie;
-            }
-          }
-          return movie;
-        })
-      );
-
-      return {
-        movies: moviesWithSignedUrls,
-        totalPages: Math.ceil(count / limit),
-        currentPage: page,
-      };
+      return response.json();
     } catch (error) {
       console.error("Failed to fetch movies:", error);
       throw error;
@@ -62,42 +20,37 @@ export const fetchMovies = createAsyncThunk(
   }
 );
 
+export const fetchMovie = createAsyncThunk("movies/fetchMovie", async (id) => {
+  try {
+    const response = await fetch(`/api/movies/${id}`);
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message);
+    }
+
+    return response.json();
+  } catch (error) {
+    console.error("Failed to fetch movie:", error);
+    throw error;
+  }
+});
+
 export const addMovie = createAsyncThunk(
   "movies/addMovie",
   async (formData) => {
     try {
-      let poster_url = null;
-      const file = formData.get("poster");
+      const response = await fetch("/api/movies", {
+        method: "POST",
+        body: formData, // FormData will be automatically handled
+      });
 
-      if (file) {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("movie_posters")
-          .upload(fileName, file, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (uploadError) throw uploadError;
-
-        // Get signed URL for poster
-        poster_url = await getSignedUrl(fileName);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message);
       }
 
-      const { data: movie, error: insertError } = await supabase
-        .from("movies")
-        .insert({
-          title: formData.get("title"),
-          publishing_year: parseInt(formData.get("publishing_year")),
-          poster_url,
-        })
-        .select()
-        .single();
-
-      if (insertError) throw insertError;
-      return movie;
+      return response.json();
     } catch (error) {
       console.error("Failed to create movie:", error);
       throw error;
@@ -109,38 +62,17 @@ export const updateMovie = createAsyncThunk(
   "movies/updateMovie",
   async ({ id, formData }, { rejectWithValue }) => {
     try {
-      let poster_url = null;
+      const response = await fetch(`/api/movies/${id}`, {
+        method: "PATCH",
+        body: formData,
+      });
 
-      const file = formData.get("poster");
-      if (file) {
-        const fileExt = file.name.split(".").pop();
-        const fileName = `${Math.random()}.${fileExt}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("movie_posters")
-          .upload(fileName, file, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (uploadError) throw uploadError;
-
-        poster_url = await getSignedUrl(fileName);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message);
       }
 
-      const { data: movie, error: updateError } = await supabase
-        .from("movies")
-        .update({
-          title: formData.get("title"),
-          publishing_year: parseInt(formData.get("publishing_year")),
-          ...(poster_url && { poster_url }),
-        })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (updateError) throw updateError;
-      return movie;
+      return response.json();
     } catch (error) {
       console.error("Failed to update movie:", error);
       return rejectWithValue(error.message);
@@ -148,44 +80,26 @@ export const updateMovie = createAsyncThunk(
   }
 );
 
-export const fetchMovie = createAsyncThunk("movies/fetchMovie", async (id) => {
-  try {
-    const { data: movie, error: fetchError } = await supabase
-      .from("movies")
-      .select("*")
-      .eq("id", id)
-      .single();
+export const deleteMovie = createAsyncThunk(
+  "movies/deleteMovie",
+  async (id, { rejectWithValue }) => {
+    try {
+      const response = await fetch(`/api/movies/${id}`, {
+        method: "DELETE",
+      });
 
-    if (fetchError) throw fetchError;
-
-    if (!movie) {
-      throw new Error("Movie not found");
-    }
-
-    if (movie.poster_url) {
-      try {
-        const fileName = movie.poster_url.includes("/")
-          ? movie.poster_url.split("/").pop()
-          : movie.poster_url;
-
-        const { data, error } = await supabase.storage
-          .from("movie_posters")
-          .createSignedUrl(fileName, 604800); // 7 days expiry
-
-        if (!error) {
-          movie.poster_url = data.signedUrl;
-        }
-      } catch (error) {
-        console.error(`Failed to get signed URL for movie ${id}:`, error);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message);
       }
-    }
 
-    return movie;
-  } catch (error) {
-    console.error("Failed to fetch movie:", error);
-    throw error;
+      return id;
+    } catch (error) {
+      console.error("Failed to delete movie:", error);
+      return rejectWithValue(error.message);
+    }
   }
-});
+);
 
 const movieSlice = createSlice({
   name: "movies",
@@ -196,6 +110,7 @@ const movieSlice = createSlice({
     error: null,
     currentPage: 1,
     totalPages: 1,
+    totalMovies: 0,
   },
   reducers: {
     clearMovies: (state) => {
@@ -203,24 +118,36 @@ const movieSlice = createSlice({
       state.currentMovie = null;
       state.currentPage = 1;
       state.totalPages = 1;
+      state.totalMovies = 0;
+    },
+    clearCurrentMovie: (state) => {
+      state.currentMovie = null;
+    },
+    setCurrentPage: (state, action) => {
+      state.currentPage = action.payload;
     },
   },
   extraReducers: (builder) => {
     builder
+      // Fetch Movies
       .addCase(fetchMovies.pending, (state) => {
         state.status = "loading";
+        state.error = null;
       })
       .addCase(fetchMovies.fulfilled, (state, action) => {
         state.status = "succeeded";
         state.movies = action.payload.movies;
         state.currentPage = action.payload.currentPage;
         state.totalPages = action.payload.totalPages;
+        state.totalMovies = action.payload.totalMovies;
         state.error = null;
       })
       .addCase(fetchMovies.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error.message;
       })
+
+      // Fetch Single Movie
       .addCase(fetchMovie.pending, (state) => {
         state.status = "loading";
         state.currentMovie = null;
@@ -236,10 +163,30 @@ const movieSlice = createSlice({
         state.currentMovie = null;
         state.error = action.error.message;
       })
+
+      // Add Movie
+      .addCase(addMovie.pending, (state) => {
+        state.status = "loading";
+        state.error = null;
+      })
       .addCase(addMovie.fulfilled, (state, action) => {
+        state.status = "succeeded";
         state.movies.unshift(action.payload);
+        state.totalMovies += 1;
+        state.error = null;
+      })
+      .addCase(addMovie.rejected, (state, action) => {
+        state.status = "failed";
+        state.error = action.error.message;
+      })
+
+      // Update Movie
+      .addCase(updateMovie.pending, (state) => {
+        state.status = "loading";
+        state.error = null;
       })
       .addCase(updateMovie.fulfilled, (state, action) => {
+        state.status = "succeeded";
         const index = state.movies.findIndex(
           (movie) => movie.id === action.payload.id
         );
@@ -247,9 +194,33 @@ const movieSlice = createSlice({
           state.movies[index] = action.payload;
         }
         state.currentMovie = action.payload;
+        state.error = null;
+      })
+      .addCase(updateMovie.rejected, (state, action) => {
+        state.status = "failed";
+        state.error = action.payload;
+      })
+
+      // Delete Movie
+      .addCase(deleteMovie.pending, (state) => {
+        state.status = "loading";
+        state.error = null;
+      })
+      .addCase(deleteMovie.fulfilled, (state, action) => {
+        state.status = "succeeded";
+        state.movies = state.movies.filter(
+          (movie) => movie.id !== action.payload
+        );
+        state.totalMovies -= 1;
+        state.error = null;
+      })
+      .addCase(deleteMovie.rejected, (state, action) => {
+        state.status = "failed";
+        state.error = action.payload;
       });
   },
 });
 
-export const { clearMovies } = movieSlice.actions;
+export const { clearMovies, clearCurrentMovie, setCurrentPage } =
+  movieSlice.actions;
 export default movieSlice.reducer;

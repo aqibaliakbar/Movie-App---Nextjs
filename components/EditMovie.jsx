@@ -4,7 +4,6 @@ import { useDispatch, useSelector } from "react-redux";
 import { useRouter, useParams } from "next/navigation";
 import { MovieForm } from "./MovieForm";
 import { fetchMovie, updateMovie } from "@/redux/features/movieSlice";
-
 import PageLayout from "./PageLayout";
 import SessionLoading from "./SessionLoading";
 
